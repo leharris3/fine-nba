@@ -13,7 +13,20 @@ from typing import Dict, List, Optional
 
 logging.basicConfig(level=logging.WARN)
 
+class StatVUAnnotation():
+    """
+    Wrapper and helper functions for sportvu annotations for 15'-16' NBA games.
+    Data Source: https://github.com/linouk23/NBA-Player-Movements
+    """
+    
+    def __init__(self, fp: str):
+        assert os.path.isfile(fp), f"Error: invalid path to statvu file: {fp}"
+        assert fp.endswith(".json"), f"Error: invalid ext, expect .json for fp: {fp}"
+        self.fp: str = fp
+        with open(fp, 'r') as f:
+            self.data = ujson.load(f)
 
+        
 class ClipAnnotation:
     """
     Each clip in our dataset contains data scattered across many different files and data formats.
