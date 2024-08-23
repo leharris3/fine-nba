@@ -1,0 +1,16 @@
+*.png
+*.txt
+*.ttf
+*.cache
+*.pyc
+*.npy
+*.jpg
+*.pt
+*.csv
+*.data
+*.names
+*.out
+*.yaml
+*.txt
+*.toml
+settings.json

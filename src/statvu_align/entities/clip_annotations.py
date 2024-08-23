@@ -7,10 +7,11 @@ import lz4.frame
 import msgpack
 import cv2
 
+from glob import glob
 from tqdm import tqdm
 from typing import Dict, List, Optional
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.WARN)
 
 
 class ClipAnnotation:
@@ -19,9 +20,11 @@ class ClipAnnotation:
     This class is intended to simplify the process of parsing different annotations types for a single clip.
     """
 
+    DATASET_ROOT = "/mnt/mir/levlevi/nba-plus-statvu-dataset"
     CLIPS_DIR = "filtered-clips"
     ANNOTATIONS_DIR = "filtered-clip-annotations"
     THREE_D_POSES_DIR = "filtered-clip-3d-poses-hmr-2.0"
+    STATVU_LOGS_DIR = "statvu-game-logs"
 
     def __init__(self, annotation_fp: str):
         """
@@ -73,6 +76,31 @@ class ClipAnnotation:
             )
             self.video_fp = None
 
+        self.statvu_aligned_fp = os.path.join(
+            ClipAnnotation.DATASET_ROOT,
+            "statvu-aligned",
+            self.annotations_fp.split("/")[-3],
+            self.annotations_fp.split("/")[-1],
+        ).replace("_annotation", "")
+        try:
+            assert os.path.isfile(self.statvu_aligned_fp)
+        except:
+            logging.warning(
+                f"statvu-aligned time-remaining results: {self.statvu_aligned_fp}, do not exist. Setting this attribute to None."
+            )
+            self.statvu_aligned_fp = None
+            
+        self.game_id: str = self.basename.split('_')[0]
+        self.period: str = self.annotations_fp.split('/')[-2][0]
+        self.statvu_game_log_fp: Optional[str] = None
+        
+        statvu_log_file_paths = glob(os.path.join(ClipAnnotation.DATASET_ROOT, ClipAnnotation.STATVU_LOGS_DIR, '*', '*'))
+        for fp in statvu_log_file_paths:
+            game_id = fp.split('/')[-2].split('.')[-1]
+            if game_id == self.game_id:
+                self.statvu_game_log_fp = fp
+                break
+
         self.three_d_poses_fp = annotation_fp.replace(
             self.subdir, ClipAnnotation.THREE_D_POSES_DIR
         ).replace(self.annotation_ext, "_bin.lz4")
@@ -83,6 +111,7 @@ class ClipAnnotation:
                 f"3D-pose file path: {self.three_d_poses_fp}, does not exist. Setting this attribute to None."
             )
             self.three_d_poses_fp = None
+            
 
     def get_3d_pose_data(self):
         with lz4.frame.open(self.three_d_poses_fp, "rb") as compressed_file:
