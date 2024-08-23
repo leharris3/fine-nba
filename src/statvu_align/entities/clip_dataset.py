@@ -12,3 +12,9 @@ class FilteredClipDataset():
         assert os.path.isdir(self.filtered_clip_annotations_dir), f"Error: {self.filtered_clip_annotations_dir} is not a valid dir!"
         self.filtered_clip_annotations_file_paths = glob(os.path.join(self.filtered_clip_annotations_dir, "*", "*", "*" + FILTERED_CLIPS_ANN_EXT))
         assert len(self.filtered_clip_annotations_file_paths) > 0, f"Error: could not find any files in {self.filtered_clip_annotations_dir}"
+
+    def __init__(self, dir_path: str):
+        self.filtered_clip_annotations_dir = dir_path
+        assert os.path.isdir(self.filtered_clip_annotations_dir), f"Error: {self.filtered_clip_annotations_dir} is not a valid dir!"
+        self.filtered_clip_annotations_file_paths = glob(os.path.join(self.filtered_clip_annotations_dir, "*", "*", "*" + FILTERED_CLIPS_ANN_EXT))
+        assert len(self.filtered_clip_annotations_file_paths) > 0, f"Error: could not find any files in {self.filtered_clip_annotations_dir}"

@@ -6,6 +6,7 @@ import os
 import lz4.frame
 import msgpack
 import cv2
+import numpy as np
 
 from glob import glob
 from tqdm import tqdm
@@ -13,19 +14,104 @@ from typing import Dict, List, Optional
 
 logging.basicConfig(level=logging.WARN)
 
-class StatVUAnnotation():
+
+class PlayerPosition:
+
+    def __init__(self, player_position: List):
+        self.team_id: str = player_position[0]
+        self.player_id: str = player_position[1]
+        self.x: str = player_position[2]
+        self.y: str = player_position[3]
+        self.z: str = player_position[4]
+
+
+class Moment:
+
+    def __init__(self, moment: List):
+        self.period: str = moment[0]
+        self.moment_id: str = moment[1]
+        self.time_remaining_in_quarter: str = moment[2]
+        self.shot_clock: str = moment[3]
+        self.player_positions: List[PlayerPosition] = self.get_player_positions(
+            moment[5]
+        )
+
+    def get_player_positions(
+        self, player_positions: List[List]
+    ) -> List[PlayerPosition]:
+        player_positions_arr = []
+        for pp in player_positions:
+            player_positions_arr.append(PlayerPosition(pp))
+        return player_positions_arr
+
+
+class Event:
+
+    def __init__(self, event: Dict):
+        self.event_id: str = event["eventId"]
+        self.visitor: str = event["visitor"]
+        self.home: str = event["home"]
+        self.moments: List[Moment] = self.get_moments(event["moments"])
+
+    def get_moments(self, moments: List[List]) -> List[Moment]:
+        moments_arr = []
+        for moment in moments:
+            moments_arr.append(Moment(moment))
+        return moments_arr
+
+
+class StatVUAnnotation:
     """
     Wrapper and helper functions for sportvu annotations for 15'-16' NBA games.
     Data Source: https://github.com/linouk23/NBA-Player-Movements
     """
-    
+
     def __init__(self, fp: str):
         assert os.path.isfile(fp), f"Error: invalid path to statvu file: {fp}"
         assert fp.endswith(".json"), f"Error: invalid ext, expect .json for fp: {fp}"
         self.fp: str = fp
-        with open(fp, 'r') as f:
-            self.data = ujson.load(f)
+        with open(fp, "r") as f:
+            self.data: Dict = ujson.load(f)
 
+        self.gameid: str = self.data["gameid"]
+        self.gamedata: str = self.data["gamedate"]
+        self.events: List[Event] = self.get_events(self.data["events"])
+        self.quarter_time_remaining_moment_map = self.get_quarter_time_remaining_moment_map()
+
+    def get_events(self, events: List[Dict]) -> List[Event]:
+        events_arr = []
+        for event in events:
+            events_arr.append(Event(event))
+        return events_arr
+
+    def get_quarter_time_remaining_moment_map(self) -> Dict[int, Dict[float, Moment]]:
+        """
+        {
+            quarter: {
+                time_remaining: Moment
+            }
+        }
+        """
+        
+        quarter_time_remaining_map = {}
+        for event in self.events:
+            for moment in event.moments:
+                period = moment.period
+                time_remaining = moment.time_remaining_in_quarter
+                if period not in quarter_time_remaining_map:
+                    quarter_time_remaining_map[period] = {}
+                quarter_time_remaining_map[period][time_remaining] = moment
+        return quarter_time_remaining_map
+    
+    def find_closest_moment(self, val: float, period: int) -> Moment:
+        """
+        Return the closest `Moment` to a time remaining `val` in a game `period`.
+        """
+        
+        tr_moments_map_subset: Dict[Moment] = self.quarter_time_remaining_moment_map[period]
+        keys: np.array = np.array(list(tr_moments_map_subset.keys())).astype(float)
+        closest_idx: int = np.argmin(abs(keys - val))
+        return tr_moments_map_subset[keys[closest_idx]]
         
 class ClipAnnotation:
     """
@@ -102,17 +188,24 @@ class ClipAnnotation:
                 f"statvu-aligned time-remaining results: {self.statvu_aligned_fp}, do not exist. Setting this attribute to None."
             )
             self.statvu_aligned_fp = None
-            
-        self.game_id: str = self.basename.split('_')[0]
-        self.period: str = self.annotations_fp.split('/')[-2][0]
+
+        self.game_id: str = self.basename.split("_")[0]
+        self.period: str = self.annotations_fp.split("/")[-2][0]
+
         self.statvu_game_log_fp: Optional[str] = None
-        
-        statvu_log_file_paths = glob(os.path.join(ClipAnnotation.DATASET_ROOT, ClipAnnotation.STATVU_LOGS_DIR, '*', '*'))
+        statvu_log_file_paths = glob(
+            os.path.join(
+                ClipAnnotation.DATASET_ROOT, ClipAnnotation.STATVU_LOGS_DIR, "*", "*"
+            )
+        )
         for fp in statvu_log_file_paths:
-            game_id = fp.split('/')[-2].split('.')[-1]
+            game_id = fp.split("/")[-2].split(".")[-1]
             if game_id == self.game_id:
                 self.statvu_game_log_fp = fp
                 break
+        self.statvu_annotation: StatVUAnnotation = StatVUAnnotation(
+            self.statvu_game_log_fp
+        )
 
         self.three_d_poses_fp = annotation_fp.replace(
             self.subdir, ClipAnnotation.THREE_D_POSES_DIR
@@ -124,7 +217,6 @@ class ClipAnnotation:
                 f"3D-pose file path: {self.three_d_poses_fp}, does not exist. Setting this attribute to None."
             )
             self.three_d_poses_fp = None
-            
 
     def get_3d_pose_data(self):
         with lz4.frame.open(self.three_d_poses_fp, "rb") as compressed_file:
