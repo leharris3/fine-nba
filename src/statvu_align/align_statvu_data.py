@@ -8,7 +8,7 @@ from tqdm import tqdm
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 from typing import Optional, List
-from entities.clip_annotations import ClipAnnotation
+from entities.clip_annotations import ClipAnnotation, Moment
 from entities.clip_dataset import FilteredClipDataset
 
 # goal: map each frame idx to a float val representing the time remaining
@@ -114,34 +114,41 @@ def convert_results_to_timeseries(results_fp: str) -> List[float]:
     return smoothed_results
 
 
-def process_fp(fp: str):
+def process_fp(fp: str) -> None:
+
     dst_dir = "__nba-plus-statvu-dataset__/filtered-clip-statvu-moments"
     ann = ClipAnnotation(fp)
+    # the quarter in a basketball game
+    period = int(ann.period)
     time_remaining = convert_results_to_timeseries(ann.statvu_aligned_fp)
     moments_frames_map = {}
     for frame_idx, tr in enumerate(time_remaining):
-        moment = ann.statvu_annotation.find_closest_moment(tr, 4)
-        moments_frames_map[frame_idx] = moment
-    dst_path = os.path.join(dst_dir, '/'.join(ann.annotations_fp.split('/')[-3: ]))
+        moment: Moment = ann.statvu_annotation.find_closest_moment(tr, period)
+        # convert moments to an ordinary dict value
+        moments_frames_map[frame_idx] = moment.to_dict()
+    dst_path = os.path.join(dst_dir, "/".join(ann.annotations_fp.split("/")[-3:]))
     os.makedirs(Path(dst_path).parent.__str__(), exist_ok=True)
-    with open(dst_path, 'wb') as f:
+    # save the results in a serial
+    with open(dst_path, "wb") as f:
         pickle.dump(moments_frames_map, f)
-    
+
 
 def main():
     ann_dir = "/playpen-storage/levlevi/opr/fine-nba/src/statvu_align/__nba-plus-statvu-dataset__/filtered-clip-annotations-with-ratios-pkl"
     ann_fps = FilteredClipDataset(ann_dir).filtered_clip_annotations_file_paths
+
     with ProcessPoolExecutor(max_workers=64) as ex:
         futures = []
         for fp in ann_fps:
-            futures.append(
-                ex.submit(process_fp, fp)
-            )
-        for future in tqdm(as_completed(futures), total=len(ann_fps), desc="aligning statvu data"):
+            futures.append(ex.submit(process_fp, fp))
+        for future in tqdm(
+            as_completed(futures), total=len(ann_fps), desc="aligning statvu data"
+        ):
             try:
                 future.result()
             except:
                 print(f"oh fuck!")
-        
+
+
 if __name__ == "__main__":
     main()

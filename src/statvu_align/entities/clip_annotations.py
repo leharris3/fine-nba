@@ -24,6 +24,15 @@ class PlayerPosition:
         self.y: str = player_position[3]
         self.z: str = player_position[4]
 
+    def to_dict(self) -> Dict:
+        return {
+            "team_id": self.team_id,
+            "player_id": self.player_id,
+            "x": self.x,
+            "y": self.y,
+            "z": self.z,
+        }
+
 
 class Moment:
 
@@ -43,6 +52,16 @@ class Moment:
         for pp in player_positions:
             player_positions_arr.append(PlayerPosition(pp))
         return player_positions_arr
+
+    def to_dict(self) -> Dict:
+        moment_dict = {
+            "period": self.period,
+            "moment_id": self.moment_id,
+            "time_remaining": self.time_remaining_in_quarter,
+            "shot_clock": self.shot_clock,
+            "player_positions": [pp.to_dict() for pp in self.player_positions],
+        }
+        return moment_dict
 
 
 class Event:
@@ -76,7 +95,9 @@ class StatVUAnnotation:
         self.gameid: str = self.data["gameid"]
         self.gamedata: str = self.data["gamedate"]
         self.events: List[Event] = self.get_events(self.data["events"])
-        self.quarter_time_remaining_moment_map = self.get_quarter_time_remaining_moment_map()
+        self.quarter_time_remaining_moment_map = (
+            self.get_quarter_time_remaining_moment_map()
+        )
 
     def get_events(self, events: List[Dict]) -> List[Event]:
         events_arr = []
@@ -92,7 +113,7 @@ class StatVUAnnotation:
             }
         }
         """
-        
+
         quarter_time_remaining_map = {}
         for event in self.events:
             for moment in event.moments:
@@ -102,17 +123,21 @@ class StatVUAnnotation:
                     quarter_time_remaining_map[period] = {}
                 quarter_time_remaining_map[period][time_remaining] = moment
         return quarter_time_remaining_map
-    
+
     def find_closest_moment(self, val: float, period: int) -> Moment:
         """
         Return the closest `Moment` to a time remaining `val` in a game `period`.
         """
-        
-        tr_moments_map_subset: Dict[Moment] = self.quarter_time_remaining_moment_map[period]
+
+        tr_moments_map_subset: Dict[Moment] = self.quarter_time_remaining_moment_map[
+            period
+        ]
+
         keys: np.array = np.array(list(tr_moments_map_subset.keys())).astype(float)
         closest_idx: int = np.argmin(abs(keys - val))
         return tr_moments_map_subset[keys[closest_idx]]
-        
+
+
 class ClipAnnotation:
     """
     Each clip in our dataset contains data scattered across many different files and data formats.
@@ -190,7 +215,7 @@ class ClipAnnotation:
             self.statvu_aligned_fp = None
 
         self.game_id: str = self.basename.split("_")[0]
-        self.period: str = self.annotations_fp.split("/")[-2][0]
+        self.period: str = self.annotations_fp.split("/")[-2][-1]
 
         self.statvu_game_log_fp: Optional[str] = None
         statvu_log_file_paths = glob(
