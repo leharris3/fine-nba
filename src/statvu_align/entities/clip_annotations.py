@@ -138,12 +138,71 @@ class StatVUAnnotation:
         return tr_moments_map_subset[keys[closest_idx]]
 
 
+class BoundingBox:
+
+    def __init__(self, data: Dict) -> None:
+        self.frame_number: int = data["frame_number"]
+        self.player_id: int = data["player_id"]
+        self.x: float = data["x"]
+        self.y: float = data["y"]
+        self.width: float = data["width"]
+        self.height: float = data["height"]
+        self.confidence: float = data["confidence"]
+        self.bbox_ratio: np.ndarray = data["bbox_ratio"]
+
+
+class Frame:
+
+    def __init__(self, data: Dict) -> None:
+        self.frame_id: int = data["frame_id"]
+        self.bbox: List[BoundingBox] = self.get_bounding_boxes(data["bbox"])
+
+        # TODO: we originally intended for tracklets to correspond to statvu 2d position `moment` data
+        # we currently have this data kept in a seperate subdir
+        # if we have values for some reason at data['tracklet'], they should be considered garbage and ignored
+        self.tracklet = None
+
+    def get_bounding_boxes(self, data: List[Dict]) -> List[BoundingBox]:
+        bbox_arr = []
+        for bbx in data:
+            bbox_arr.append(BoundingBox(bbx))
+        return bbox_arr
+
+
+class VideoInfo:
+
+    def __init__(self, data: Dict) -> None:
+        self.caption: str = data["caption"]
+        self.file_type: str = data["file_type"]
+
+        # TODO: these should really be floats
+        self.video_fps: int = data["video_fps"]
+        self.height: int = data["height"]
+        self.width: int = data["width"]
+
+
 class ClipAnnotation:
+
+    def __init__(self, data: Dict) -> None:
+        self.video_id: int = data["video_id"]
+        self.video_path: str = data["video_path"]
+        self.frames: List[Frame] = self.get_frames(data["frames"])
+        self.video_info = VideoInfo(data["video_info"])
+
+    def get_frames(self, frames: List[Dict]) -> List[Frame]:
+        frames_arr = []
+        for frame in frames:
+            frames_arr.append(Frame(frame))
+        return frames_arr
+
+
+class ClipAnnotationWrapper:
     """
     Each clip in our dataset contains data scattered across many different files and data formats.
     This class is intended to simplify the process of parsing different annotations types for a single clip.
     """
 
+    # TODO: dynamicaly set root to 'mnt' or 'playpen-storage depending on machine
     DATASET_ROOT = "/mnt/mir/levlevi/nba-plus-statvu-dataset"
     CLIPS_DIR = "filtered-clips"
     ANNOTATIONS_DIR = "filtered-clip-annotations"
@@ -162,12 +221,12 @@ class ClipAnnotation:
             annotation_fp
         ), f"Error: {annotation_fp} is not a valid file"
 
-        self.annotation_ext = ""
-        self.annotation_data = None
-
+        self.annotation_ext: str = ""
+        self.annotation_data: Optional[Dict] = None
         # subdir in level one of dataset
-        self.subdir = annotation_fp.split("/")[-4]
+        self.subdir: str = annotation_fp.split("/")[-4]
 
+        # load data
         if annotation_fp.endswith(".json"):
             self.annotation_ext = ".json"
             with open(annotation_fp, "r") as f:
@@ -181,13 +240,16 @@ class ClipAnnotation:
                 f"Invalid annotation file path extension, expected: ['.json', '.pkl']"
             )
 
-        self.annotations_fp = annotation_fp
-        self.basename = (
+        # the important object (:
+        self.clip_annotation = ClipAnnotation(self.annotation_data)
+
+        self.annotations_fp: str = annotation_fp
+        self.basename: str = (
             os.path.basename(annotation_fp)
             .replace(self.annotation_ext, "")
             .replace("_annotation", "")
         )
-        self.video_fp = (
+        self.video_fp: str = (
             annotation_fp.replace(self.subdir, ClipAnnotation.CLIPS_DIR)
             .replace("_annotation", "")
             .replace(self.annotation_ext, ".mp4")
@@ -200,7 +262,7 @@ class ClipAnnotation:
             )
             self.video_fp = None
 
-        self.statvu_aligned_fp = os.path.join(
+        self.statvu_aligned_fp: Optional[str] = os.path.join(
             ClipAnnotation.DATASET_ROOT,
             "statvu-aligned",
             self.annotations_fp.split("/")[-3],
@@ -216,7 +278,6 @@ class ClipAnnotation:
 
         self.game_id: str = self.basename.split("_")[0]
         self.period: str = self.annotations_fp.split("/")[-2][-1]
-
         self.statvu_game_log_fp: Optional[str] = None
         statvu_log_file_paths = glob(
             os.path.join(

@@ -118,6 +118,10 @@ def process_fp(fp: str) -> None:
 
     dst_dir = "__nba-plus-statvu-dataset__/filtered-clip-statvu-moments"
     ann = ClipAnnotation(fp)
+    dst_path = os.path.join(dst_dir, "/".join(ann.annotations_fp.split("/")[-3:]))
+    if os.path.isfile(dst_path):
+        print(f"Skipping fp: {dst_path}, already exists!")
+        return
     # the quarter in a basketball game
     period = int(ann.period)
     time_remaining = convert_results_to_timeseries(ann.statvu_aligned_fp)
@@ -126,7 +130,6 @@ def process_fp(fp: str) -> None:
         moment: Moment = ann.statvu_annotation.find_closest_moment(tr, period)
         # convert moments to an ordinary dict value
         moments_frames_map[frame_idx] = moment.to_dict()
-    dst_path = os.path.join(dst_dir, "/".join(ann.annotations_fp.split("/")[-3:]))
     os.makedirs(Path(dst_path).parent.__str__(), exist_ok=True)
     # save the results in a serial
     with open(dst_path, "wb") as f:
@@ -134,7 +137,7 @@ def process_fp(fp: str) -> None:
 
 
 def main():
-    ann_dir = "/playpen-storage/levlevi/opr/fine-nba/src/statvu_align/__nba-plus-statvu-dataset__/filtered-clip-annotations-with-ratios-pkl"
+    ann_dir = "/playpen-storage/levlevi/opr/fine-nba/src/statvu_align/__nba-plus-statvu-dataset__/filtered-clip-annotations-with-video-info"
     ann_fps = FilteredClipDataset(ann_dir).filtered_clip_annotations_file_paths
 
     with ProcessPoolExecutor(max_workers=64) as ex:
