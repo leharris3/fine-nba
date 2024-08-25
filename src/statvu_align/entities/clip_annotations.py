@@ -138,7 +138,59 @@ class StatVUAnnotation:
         return tr_moments_map_subset[keys[closest_idx]]
 
 
+class Bbox:
+    
+    def __init__(self, bbox: Dict) -> None:
+        self.frame_number: int = bbox["frame_number"]
+        self.player_id: int = bbox["player_id"]
+        self.x: int = bbox["x"]
+        self.y: int = bbox["y"]
+        self.width: int = bbox["width"]
+        self.height: int = bbox["height"]
+        self.confidence: float = bbox["confidence"]
+        self.keypoints: np.ndarray = bbox["keypoints"]
+        self.bbox_ratio: np.ndarray = bbox["bbox_ratio"]
+        
+        
+class VideoInfo:
+
+    def __init__(self, video_info: Dict):
+        self.caption: str = video_info["caption"]
+        self.file_type: str = video_info["file_type"]
+        self.video_fps: int = video_info["video_fps"]
+        self.height: int = video_info["height"]
+        self.width: int = video_info["width"]
+
+class Frame:
+
+    def __init__(self, frame: Dict):
+        self.frame_id: int = frame["frame_id"]
+        self.bbox: List[Bbox] = self.get_bboxes(frame["bbox"])
+        self.tracklet = None
+        
+    def get_bboxes(self, bboxes: List[Dict]) -> List[Bbox]:
+        bboxes_arr = []
+        for bbox in bboxes:
+            bboxes_arr.append(Bbox(bbox))
+        return bboxes_arr
+
 class ClipAnnotation:
+
+    def __init__(self, data: Dict):
+        self.video_id: int = data["video_id"]
+        self.video_path: str = data["video_path"]
+        self.frames: List[Frame] = self.get_frames(data["frames"])
+        self.video_info: VideoInfo = VideoInfo(data["video_info"])
+        
+    def get_frames(self, frames: List[Dict]) -> List[Frame]:
+        frames_arr = []
+        for frame in frames:
+            frames_arr.append(Frame(frame))
+        return frames_arr
+        
+        
+
+class ClipAnnotationWrapper:
     """
     Each clip in our dataset contains data scattered across many different files and data formats.
     This class is intended to simplify the process of parsing different annotations types for a single clip.
@@ -180,7 +232,8 @@ class ClipAnnotation:
             raise Exception(
                 f"Invalid annotation file path extension, expected: ['.json', '.pkl']"
             )
-
+            
+        self.clip_annotation = ClipAnnotation(self.annotation_data)
         self.annotations_fp = annotation_fp
         self.basename = (
             os.path.basename(annotation_fp)
