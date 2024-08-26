@@ -141,14 +141,14 @@ class StatVUAnnotation:
 class Bbox:
     
     def __init__(self, bbox: Dict) -> None:
-        self.frame_number: int = bbox["frame_number"]
+        self.frame_number: Optional[int] = bbox["frame_number"] if "frame_number" in bbox else None
         self.player_id: int = bbox["player_id"]
-        self.x: int = bbox["x"]
-        self.y: int = bbox["y"]
-        self.width: int = bbox["width"]
-        self.height: int = bbox["height"]
-        self.confidence: float = bbox["confidence"]
-        self.keypoints: np.ndarray = bbox["keypoints"]
+        self.x: Optional[int] = bbox["x"] if "x" in bbox else None
+        self.y: Optional[int] = bbox["y"] if "y" in bbox else None
+        self.width: Optional[int] = bbox["width"] if "width" in bbox else None
+        self.height: Optional[int] = bbox["height"] if "height" in bbox else None
+        self.confidence: Optional[float] = bbox["confidence"] if "confidence" in bbox else None
+        self.keypoints: Optional[np.ndarray] = bbox["keypoints"] if "keypoints" in bbox else None
         self.bbox_ratio: np.ndarray = bbox["bbox_ratio"]
         
         
@@ -186,9 +186,7 @@ class ClipAnnotation:
         frames_arr = []
         for frame in frames:
             frames_arr.append(Frame(frame))
-        return frames_arr
-        
-        
+        return frames_arr        
 
 class ClipAnnotationWrapper:
     """
@@ -241,7 +239,7 @@ class ClipAnnotationWrapper:
             .replace("_annotation", "")
         )
         self.video_fp = (
-            annotation_fp.replace(self.subdir, ClipAnnotation.CLIPS_DIR)
+            annotation_fp.replace(self.subdir, ClipAnnotationWrapper.CLIPS_DIR)
             .replace("_annotation", "")
             .replace(self.annotation_ext, ".mp4")
         )
@@ -254,7 +252,7 @@ class ClipAnnotationWrapper:
             self.video_fp = None
 
         self.statvu_aligned_fp = os.path.join(
-            ClipAnnotation.DATASET_ROOT,
+            ClipAnnotationWrapper.DATASET_ROOT,
             "statvu-aligned",
             self.annotations_fp.split("/")[-3],
             self.annotations_fp.split("/")[-1],
@@ -273,7 +271,7 @@ class ClipAnnotationWrapper:
         self.statvu_game_log_fp: Optional[str] = None
         statvu_log_file_paths = glob(
             os.path.join(
-                ClipAnnotation.DATASET_ROOT, ClipAnnotation.STATVU_LOGS_DIR, "*", "*"
+                ClipAnnotationWrapper.DATASET_ROOT, ClipAnnotationWrapper.STATVU_LOGS_DIR, "*", "*"
             )
         )
         for fp in statvu_log_file_paths:
@@ -286,7 +284,7 @@ class ClipAnnotationWrapper:
         )
 
         self.three_d_poses_fp = annotation_fp.replace(
-            self.subdir, ClipAnnotation.THREE_D_POSES_DIR
+            self.subdir, ClipAnnotationWrapper.THREE_D_POSES_DIR
         ).replace(self.annotation_ext, "_bin.lz4")
         try:
             assert os.path.isfile(self.three_d_poses_fp)
