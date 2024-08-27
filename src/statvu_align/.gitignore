@@ -13,4 +13,6 @@
 *.yaml
 *.txt
 *.toml
+*pycache*
+*.egg-info
 settings.json

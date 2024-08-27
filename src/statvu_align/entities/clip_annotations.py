@@ -393,10 +393,9 @@ class ClipAnnotationWrapper:
                     int(bbx["width"]),
                     int(bbx["height"]),
                 )
-                # print("x, y, w, h", x, y, w, h)
 
+                # print("x, y, w, h", x, y, w, h)
                 # draw a bbx
-                import numpy as np
 
                 # print("frame shape: ", np.array(frame).shape)
                 frame = cv2.rectangle(frame, (x, y), (x + w, y + h), color, 5)
