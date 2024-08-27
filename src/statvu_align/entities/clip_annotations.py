@@ -8,6 +8,7 @@ import msgpack
 import cv2
 import numpy as np
 
+from pprint import pprint
 from glob import glob
 from tqdm import tqdm
 from typing import Dict, List, Optional
@@ -140,14 +141,17 @@ class StatVUAnnotation:
 
 class BoundingBox:
 
-    def __init__(self, data: Dict) -> None:
-        self.frame_number: int = data["frame_number"]
+    def __init__(self, data: Dict, frame_number: int) -> None:
+
+        self.frame_number: Optional[int] = (
+            data["frame_number"] if "frame_number" in data else frame_number
+        )
         self.player_id: int = data["player_id"]
-        self.x: float = data["x"]
-        self.y: float = data["y"]
-        self.width: float = data["width"]
-        self.height: float = data["height"]
-        self.confidence: float = data["confidence"]
+        self.x: float = data["x"] if "x" in data else -0
+        self.y: float = data["y"] if "y" in data else 0
+        self.width: float = data["width"] if "width" in data else 0
+        self.height: float = data["height"] if "height" in data else 0
+        self.confidence: float = data["confidence"] if "confidence" in data else 0
         self.bbox_ratio: np.ndarray = data["bbox_ratio"]
 
 
@@ -155,8 +159,11 @@ class Frame:
 
     def __init__(self, data: Dict) -> None:
         self.frame_id: int = data["frame_id"]
-        self.bbox: List[BoundingBox] = self.get_bounding_boxes(data["bbox"])
-
+        try:
+            self.bbox: List[BoundingBox] = self.get_bounding_boxes(data["bbox"])
+        except:
+            pprint(data)
+            assert False
         # TODO: we originally intended for tracklets to correspond to statvu 2d position `moment` data
         # we currently have this data kept in a seperate subdir
         # if we have values for some reason at data['tracklet'], they should be considered garbage and ignored
@@ -165,7 +172,7 @@ class Frame:
     def get_bounding_boxes(self, data: List[Dict]) -> List[BoundingBox]:
         bbox_arr = []
         for bbx in data:
-            bbox_arr.append(BoundingBox(bbx))
+            bbox_arr.append(BoundingBox(bbx, self.frame_id))
         return bbox_arr
 
 
@@ -183,11 +190,19 @@ class VideoInfo:
 
 class ClipAnnotation:
 
-    def __init__(self, data: Dict) -> None:
+    def __init__(self, data: Dict, verbose: bool = False) -> None:
+
+        if verbose:
+            pprint(data)
+
         self.video_id: int = data["video_id"]
         self.video_path: str = data["video_path"]
-        self.frames: List[Frame] = self.get_frames(data["frames"])
-        self.video_info = VideoInfo(data["video_info"])
+        self.frames: Optional[List[Frame]] = (
+            self.get_frames(data["frames"]) if "frames" in data else None
+        )
+        self.video_info: Optional[VideoInfo] = (
+            VideoInfo(data["video_info"]) if "video_info" in data else None
+        )
 
     def get_frames(self, frames: List[Dict]) -> List[Frame]:
         frames_arr = []
@@ -209,7 +224,7 @@ class ClipAnnotationWrapper:
     THREE_D_POSES_DIR = "filtered-clip-3d-poses-hmr-2.0"
     STATVU_LOGS_DIR = "statvu-game-logs"
 
-    def __init__(self, annotation_fp: str):
+    def __init__(self, annotation_fp: str, verbose: bool = False) -> None:
         """
         Given a path to a primary-annotation file, derive the paths to all other annotations for a given clip.
 
@@ -241,8 +256,7 @@ class ClipAnnotationWrapper:
             )
 
         # the important object (:
-        self.clip_annotation = ClipAnnotation(self.annotation_data)
-
+        self.clip_annotation = ClipAnnotation(self.annotation_data, verbose=verbose)
         self.annotations_fp: str = annotation_fp
         self.basename: str = (
             os.path.basename(annotation_fp)
@@ -250,7 +264,7 @@ class ClipAnnotationWrapper:
             .replace("_annotation", "")
         )
         self.video_fp: str = (
-            annotation_fp.replace(self.subdir, ClipAnnotation.CLIPS_DIR)
+            annotation_fp.replace(self.subdir, ClipAnnotationWrapper.CLIPS_DIR)
             .replace("_annotation", "")
             .replace(self.annotation_ext, ".mp4")
         )
@@ -263,7 +277,7 @@ class ClipAnnotationWrapper:
             self.video_fp = None
 
         self.statvu_aligned_fp: Optional[str] = os.path.join(
-            ClipAnnotation.DATASET_ROOT,
+            ClipAnnotationWrapper.DATASET_ROOT,
             "statvu-aligned",
             self.annotations_fp.split("/")[-3],
             self.annotations_fp.split("/")[-1],
@@ -281,7 +295,10 @@ class ClipAnnotationWrapper:
         self.statvu_game_log_fp: Optional[str] = None
         statvu_log_file_paths = glob(
             os.path.join(
-                ClipAnnotation.DATASET_ROOT, ClipAnnotation.STATVU_LOGS_DIR, "*", "*"
+                ClipAnnotationWrapper.DATASET_ROOT,
+                ClipAnnotationWrapper.STATVU_LOGS_DIR,
+                "*",
+                "*",
             )
         )
         for fp in statvu_log_file_paths:
@@ -294,7 +311,7 @@ class ClipAnnotationWrapper:
         )
 
         self.three_d_poses_fp = annotation_fp.replace(
-            self.subdir, ClipAnnotation.THREE_D_POSES_DIR
+            self.subdir, ClipAnnotationWrapper.THREE_D_POSES_DIR
         ).replace(self.annotation_ext, "_bin.lz4")
         try:
             assert os.path.isfile(self.three_d_poses_fp)
