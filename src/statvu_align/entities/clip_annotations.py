@@ -224,7 +224,7 @@ class ClipAnnotationWrapper:
     THREE_D_POSES_DIR = "filtered-clip-3d-poses-hmr-2.0"
     STATVU_LOGS_DIR = "statvu-game-logs"
 
-    def __init__(self, annotation_fp: str, verbose: bool = False) -> None:
+    def __init__(self, annotation_fp: str, verbose: bool = False, load_statvu: bool = False) -> None:
         """
         Given a path to a primary-annotation file, derive the paths to all other annotations for a given clip.
 
@@ -306,9 +306,12 @@ class ClipAnnotationWrapper:
             if game_id == self.game_id:
                 self.statvu_game_log_fp = fp
                 break
-        self.statvu_annotation: StatVUAnnotation = StatVUAnnotation(
-            self.statvu_game_log_fp
-        )
+
+        self.statvu_annotation: Optional[StatVUAnnotation] = None
+        if load_statvu:
+            self.statvu_annotation: StatVUAnnotation = StatVUAnnotation(
+                self.statvu_game_log_fp
+            )
 
         self.three_d_poses_fp = annotation_fp.replace(
             self.subdir, ClipAnnotationWrapper.THREE_D_POSES_DIR
@@ -320,6 +323,10 @@ class ClipAnnotationWrapper:
                 f"3D-pose file path: {self.three_d_poses_fp}, does not exist. Setting this attribute to None."
             )
             self.three_d_poses_fp = None
+
+        self.statvu_aligned_fp = self.annotations_fp.replace("filtered-clip-annotations-40-bbx-ratios", "filtered-clip-statvu-moments")
+        if not os.path.isfile(self.statvu_aligned_fp):
+            self.statvu_aligned_fp = None
 
     def get_3d_pose_data(self):
         with lz4.frame.open(self.three_d_poses_fp, "rb") as compressed_file:
@@ -352,6 +359,7 @@ class ClipAnnotationWrapper:
         ), f"`dst_path` must have file ext '.avi', got: {dst_path}"
 
         # inefficient, but do I care? the answer is... no
+        clip_ann_obj = self.clip_annotation
         annotations = self.annotation_data
         frames = self.get_frames()
 
@@ -373,12 +381,9 @@ class ClipAnnotationWrapper:
                 print(f"No `bbox` in frame object at idx: {idx}")
                 writer.write(frame)  # write a blank frame
                 continue
-            bboxs = frame_obj["bbox"]
+            bboxs = clip_ann_obj.frames[idx].bbox
             for bbx in bboxs:
-                if not "x" in bbx:
-                    # print(f"Skipping invalid bbx: {bbx}")
-                    continue
-                player_id = bbx["player_id"]
+                player_id = bbx.player_id
                 if not player_id in player_id_colors_map:
                     # assign each player a unique, dark color
                     player_id_colors_map[player_id] = (
@@ -388,10 +393,10 @@ class ClipAnnotationWrapper:
                     )
                 color = player_id_colors_map[player_id]
                 x, y, w, h = (
-                    int(bbx["x"]),
-                    int(bbx["y"]),
-                    int(bbx["width"]),
-                    int(bbx["height"]),
+                   int(bbx.x),
+                   int(bbx.y),
+                   int(bbx.width),
+                   int(bbx.height),
                 )
 
                 # print("x, y, w, h", x, y, w, h)
@@ -411,6 +416,62 @@ class ClipAnnotationWrapper:
                     4,
                 )
             writer.write(frame)
+        writer.release()
+
+    def visualize_player_statvu_positions(self, dst_path: str):
+        """
+        Generate a visualization of player tracklets for an annotation to `dst_path`.
+        """
+
+        assert dst_path.endswith(
+            ".avi"
+        ), f"`dst_path` must have file ext '.avi', got: {dst_path}"
+
+        clip_ann_obj = self.clip_annotation
+        with open(self.statvu_aligned_fp, "rb") as f:
+            statvu_aligned_data = pickle.load(f)
+
+        frames = self.get_frames()
+        team_id_colors_map = {}
+        height, width, fps = 720, 1280 * 2, 30.0
+        fourcc = cv2.VideoWriter_fourcc(*"XVID")
+        writer = cv2.VideoWriter(dst_path, fourcc, fps, (width, height))
+        xmax, ymax = 100, 50
+        
+        for idx, frame in tqdm(
+            enumerate(frames), desc="Generating StatVU Player Position  Viz", total=len(frames)
+        ):
+            
+            moment = statvu_aligned_data[idx]
+            player_positions = moment['player_positions']
+            canvas = np.zeros((720, 1280 * 2, 3), dtype="uint8")
+            # set left half of screen to the color white
+            canvas[:, :1280, :] = 255
+            # set right half of canvas to frame
+            canvas[:, 1280:, :] = frame
+            # breakpoint()
+            for pp in player_positions:
+                team_id = pp['team_id']
+                player_id = pp['player_id']
+                x, y = pp['x'], pp['y']
+                if team_id not in team_id_colors_map:
+                    # assign team a random color
+                    team_id_colors_map[team_id] = (
+                        random.randint(0, 255), 
+                        255,
+                        random.randint(0, 255),
+                    )
+                # find the normalized x and y positions of the player on the left side of the screen
+                x_norm = x / xmax; new_x = int(x_norm * 800) + 200
+                y_norm = y / ymax; new_y = int(y_norm * 500) + 100
+                color = team_id_colors_map[team_id]
+                # draw a circle
+                cv2.circle(canvas, (new_x, new_y), 10, color, -1)
+                # place a player id label above each circle
+                cv2.putText(canvas, f"ID: {str(player_id)}", (new_x, new_y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, color, 4)
+                # draw the boundaries of the court as a red rectangle
+                cv2.rectangle(canvas, (200, 100), (1000, 600), (0, 0, 255), 5)
+            writer.write(canvas)
         writer.release()
 
     @staticmethod
