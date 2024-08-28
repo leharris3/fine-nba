@@ -7,6 +7,9 @@ FILTERED_CLIPS_ANN_EXT = ".pkl"
 
 
 class FilteredClipDataset:
+    """
+    Wrapper for the entire Fine-NBA dataset.
+    """
 
     def __init__(self) -> None:
         self.filtered_clip_annotations_dir = os.path.join(
