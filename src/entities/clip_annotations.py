@@ -32,6 +32,18 @@ class BoundingBox:
         self.confidence: float = data["confidence"] if "confidence" in data else 0
         self.bbox_ratio: np.ndarray = data["bbox_ratio"]
 
+    def to_dict(self) -> Dict:
+        return {
+            "frame_number": self.frame_number,
+            "player_id": self.player_id,
+            "x": self.x,
+            "y": self.y,
+            "width": self.width,
+            "height": self.height,
+            "confidence": self.confidence,
+            "bbox_ratio": self.bbox_ratio.tolist(),  # Convert ndarray to list
+        }
+
 
 class Frame:
 
@@ -53,6 +65,9 @@ class Frame:
             bbox_arr.append(BoundingBox(bbx, self.frame_id))
         return bbox_arr
 
+    def to_dict(self) -> Dict:
+        return {"frame_id": self.frame_id, "bbox": [bb.to_dict() for bb in self.bbox]}
+
 
 class VideoInfo:
 
@@ -65,6 +80,15 @@ class VideoInfo:
         self.height: int = data["height"]
         self.width: int = data["width"]
 
+    def to_dict(self) -> Dict:
+        return {
+            "caption": self.caption,
+            "file_type": self.file_type,
+            "video_fps": self.video_fps,
+            "height": self.height,
+            "width": self.width,
+        }
+
 
 class ClipAnnotation:
 
@@ -72,7 +96,6 @@ class ClipAnnotation:
 
         if verbose:
             pprint(data)
-
         self.video_id: int = data["video_id"]
         self.video_path: str = data["video_path"]
         self.frames: Optional[List[Frame]] = (
@@ -81,6 +104,16 @@ class ClipAnnotation:
         self.video_info: Optional[VideoInfo] = (
             VideoInfo(data["video_info"]) if "video_info" in data else None
         )
+
+    def to_dict(self) -> Dict:
+        return {
+            "video_id": self.video_id,
+            "video_path": self.video_path,
+            "frames": (
+                [frame.to_dict() for frame in self.frames] if self.frames else None
+            ),
+            "video_info": self.video_info.to_dict() if self.video_info else None,
+        }
 
     def get_frames(self, frames: List[Dict]) -> List[Frame]:
         frames_arr = []
@@ -138,10 +171,11 @@ class ClipAnnotationWrapper:
 
         # set the path to the corresponding video clip
         subdir: str = annotation_fp.split("/")[-4]
+        annotation_ext = "." + annotation_fp.split(".")[-1]
         self.video_fp: str = (
             annotation_fp.replace(subdir, ClipAnnotationWrapper.CLIPS_DIR)
             .replace("_annotation", "")
-            .replace(self.annotation_ext, ".mp4")
+            .replace(annotation_ext, ".mp4")
         )
         try:
             assert os.path.isfile(self.video_fp)
@@ -154,7 +188,7 @@ class ClipAnnotationWrapper:
         # set a few attributes derived from fp
         basename: str = (
             os.path.basename(annotation_fp)
-            .replace(self.annotation_ext, "")
+            .replace(annotation_ext, "")
             .replace("_annotation", "")
         )
         self.game_id: str = basename.split("_")[0]
@@ -193,8 +227,8 @@ class ClipAnnotationWrapper:
 
         # find path to 3D-pose data
         self.three_d_poses_fp: Optional[str] = annotation_fp.replace(
-            self.subdir, ClipAnnotationWrapper.THREE_D_POSES_DIR
-        ).replace(self.annotation_ext, "_bin.lz4")
+            subdir, ClipAnnotationWrapper.THREE_D_POSES_DIR
+        ).replace(annotation_ext, "_bin.lz4")
         try:
             assert os.path.isfile(self.three_d_poses_fp)
         except:
@@ -203,7 +237,7 @@ class ClipAnnotationWrapper:
             )
             self.three_d_poses_fp = None
 
-    def get_3d_pose_data(self):
+    def get_3d_pose_data(self) -> Dict:
         with lz4.frame.open(self.three_d_poses_fp, "rb") as compressed_file:
             # Step 2: Decompress the data
             compressed = compressed_file.read()

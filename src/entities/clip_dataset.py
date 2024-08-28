@@ -27,8 +27,8 @@ class FilteredClipDataset:
         assert (
             len(self.filtered_clip_annotations_file_paths) > 0
         ), f"Error: could not find any files in {self.filtered_clip_annotations_dir}"
-        
-    @classmethod     
+
+    @classmethod
     def from_default_directory(cls):
         """
         Alternative constructor using the default dataset directory.
@@ -41,3 +41,6 @@ class FilteredClipDataset:
         Alternative constructor using a custom directory.
         """
         return cls(custom_dir)
+
+    def __len__(self):
+        return len(self.filtered_clip_annotations_file_paths)
