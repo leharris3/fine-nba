@@ -1,11 +1,12 @@
+import os
+import cv2
+import time
 import pickle
 import random
 import logging
 import ujson
-import os
-import lz4.frame
 import msgpack
-import cv2
+import lz4.frame
 import numpy as np
 
 from pprint import pprint
@@ -14,7 +15,7 @@ from tqdm import tqdm
 from typing import Dict, List, Optional
 from .statvu import StatVUAnnotation
 
-logging.basicConfig(level=logging.WARN)
+logging.basicConfig(level=logging.ERROR, format="%(levelname)s: %(message)s")
 
 
 class BoundingBox:
@@ -136,7 +137,11 @@ class ClipAnnotationWrapper:
     STATVU_LOGS_DIR = "statvu-game-logs"
 
     def __init__(
-        self, annotation_fp: str, verbose: bool = False, load_statvu: bool = False
+        self,
+        annotation_fp: str,
+        verbose: bool = False,
+        load_clip_annotation: bool = False,
+        load_statvu: bool = False,
     ) -> None:
         """
         Given a path to a primary-annotation file, derive the paths to all other annotations for a given clip.
@@ -144,6 +149,8 @@ class ClipAnnotationWrapper:
         Params
         :annotation_fp: a path to a `.json` or `.pkl` file containing the primary annotations for each frame in a clip.
         """
+
+        load_start = time.time()
 
         assert os.path.isfile(
             annotation_fp
@@ -155,19 +162,22 @@ class ClipAnnotationWrapper:
 
         # load annotation data dict
         self.annotation_data: Optional[Dict] = None
-        if annotation_fp.endswith(".json"):
-            with open(annotation_fp, "r") as f:
-                self.annotation_data = ujson.load(f)
-        elif annotation_fp.endswith(".pkl"):
-            with open(annotation_fp, "rb") as f:
-                self.annotation_data = pickle.load(f)
-        else:
-            raise Exception(
-                f"Invalid annotation file path extension, expected: ['.json', '.pkl']"
-            )
+        if load_clip_annotation:
+            if annotation_fp.endswith(".json"):
+                with open(annotation_fp, "r") as f:
+                    self.annotation_data = ujson.load(f)
+            elif annotation_fp.endswith(".pkl"):
+                with open(annotation_fp, "rb") as f:
+                    self.annotation_data = pickle.load(f)
+            else:
+                raise Exception(
+                    f"Invalid annotation file path extension, expected: ['.json', '.pkl']"
+                )
 
         # load `ClipAnnotation` data object
-        self.clip_annotation = ClipAnnotation(self.annotation_data, verbose=verbose)
+        self.clip_annotation: Optional[ClipAnnotation] = None
+        if load_clip_annotation:
+            self.clip_annotation = ClipAnnotation(self.annotation_data, verbose=verbose)
 
         # set the path to the corresponding video clip
         subdir: str = annotation_fp.split("/")[-4]
@@ -180,9 +190,9 @@ class ClipAnnotationWrapper:
         try:
             assert os.path.isfile(self.video_fp)
         except:
-            logging.warn(
-                f"Clip video file path: {self.video_fp}, does not exist. Setting this attribute to None."
-            )
+            # logging.warning(
+            #     f"Clip video file path: {self.video_fp}, does not exist. Setting this attribute to None."
+            # )
             self.video_fp = None
 
         # set a few attributes derived from fp
@@ -220,10 +230,20 @@ class ClipAnnotationWrapper:
 
         # find path to statvu aligned moments dict
         self.statvu_aligned_fp: Optional[str] = self.annotations_fp.replace(
-            "filtered-clip-annotations-40-bbx-ratios", "filtered-clip-statvu-moments"
+            subdir, "filtered-clip-statvu-moments"
         )
         if not os.path.isfile(self.statvu_aligned_fp):
             self.statvu_aligned_fp = None
+        else:
+            statvu_load_start = time.time()
+            with open(self.statvu_aligned_fp, "rb") as f:
+                data = pickle.load(f)
+                if len(data) == 0:
+                    logging.warning(
+                        f"statvu_aligned_fp: {self.statvu_aligned_fp} is empty. Setting this attribute to None."
+                    )
+                    self.statvu_aligned_fp = None
+            logging.info(f"statvu load time: {time.time() - statvu_load_start}")
 
         # find path to 3D-pose data
         self.three_d_poses_fp: Optional[str] = annotation_fp.replace(
@@ -232,10 +252,13 @@ class ClipAnnotationWrapper:
         try:
             assert os.path.isfile(self.three_d_poses_fp)
         except:
-            logging.warning(
-                f"3D-pose file path: {self.three_d_poses_fp}, does not exist. Setting this attribute to None."
-            )
+            # logging.warning(
+            #     f"3D-pose file path: {self.three_d_poses_fp}, does not exist. Setting this attribute to None."
+            # )
             self.three_d_poses_fp = None
+
+        logging.info(
+            f"ClipAnnotationWrapper load time: {time.time() - load_start} s")
 
     def get_3d_pose_data(self) -> Dict:
         with lz4.frame.open(self.three_d_poses_fp, "rb") as compressed_file:
