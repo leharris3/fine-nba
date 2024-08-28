@@ -420,7 +420,7 @@ class ClipAnnotationWrapper:
 
     def visualize_player_statvu_positions(self, dst_path: str):
         """
-        Generate a visualization of player tracklets for an annotation to `dst_path`.
+        Generate a visualization of 2d-player positions for an annotation to `dst_path`.
         """
 
         assert dst_path.endswith(
@@ -432,6 +432,11 @@ class ClipAnnotationWrapper:
             statvu_aligned_data = pickle.load(f)
 
         frames = self.get_frames()
+
+        img_fp = "/playpen-storage/levlevi/opr/fine-nba/src/entities/2d-court-diagram.png"
+        court_diagram = cv2.imread(img_fp)
+        court_diagram = cv2.resize(court_diagram, (800, 500))
+
         team_id_colors_map = {}
         height, width, fps = 720, 1280 * 2, 30.0
         fourcc = cv2.VideoWriter_fourcc(*"XVID")
@@ -449,6 +454,8 @@ class ClipAnnotationWrapper:
             canvas[:, :1280, :] = 255
             # set right half of canvas to frame
             canvas[:, 1280:, :] = frame
+            # draw the court on the left side of the frame
+            canvas[100:600, 200:1000, :] = court_diagram
             # breakpoint()
             for pp in player_positions:
                 team_id = pp['team_id']
@@ -456,11 +463,15 @@ class ClipAnnotationWrapper:
                 x, y = pp['x'], pp['y']
                 if team_id not in team_id_colors_map:
                     # assign team a random color
-                    team_id_colors_map[team_id] = (
-                        random.randint(0, 255), 
-                        255,
-                        random.randint(0, 255),
-                    )
+                    if len(team_id_colors_map) == 0:
+                        # green
+                        team_id_colors_map[team_id] = (0, 255, 0)
+                    elif len(team_id_colors_map) == 1:
+                        # red
+                        team_id_colors_map[team_id] = (0, 0, 255)
+                    else:
+                        # blue
+                        team_id_colors_map[team_id] = (255, 0, 0)
                 # find the normalized x and y positions of the player on the left side of the screen
                 x_norm = x / xmax; new_x = int(x_norm * 800) + 200
                 y_norm = y / ymax; new_y = int(y_norm * 500) + 100
