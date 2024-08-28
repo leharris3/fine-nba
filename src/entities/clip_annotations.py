@@ -12,131 +12,9 @@ from pprint import pprint
 from glob import glob
 from tqdm import tqdm
 from typing import Dict, List, Optional
+from .statvu import StatVUAnnotation
 
 logging.basicConfig(level=logging.WARN)
-
-
-class PlayerPosition:
-
-    def __init__(self, player_position: List):
-        self.team_id: str = player_position[0]
-        self.player_id: str = player_position[1]
-        self.x: str = player_position[2]
-        self.y: str = player_position[3]
-        self.z: str = player_position[4]
-
-    def to_dict(self) -> Dict:
-        return {
-            "team_id": self.team_id,
-            "player_id": self.player_id,
-            "x": self.x,
-            "y": self.y,
-            "z": self.z,
-        }
-
-
-class Moment:
-
-    def __init__(self, moment: List):
-        self.period: str = moment[0]
-        self.moment_id: str = moment[1]
-        self.time_remaining_in_quarter: str = moment[2]
-        self.shot_clock: str = moment[3]
-        self.player_positions: List[PlayerPosition] = self.get_player_positions(
-            moment[5]
-        )
-
-    def get_player_positions(
-        self, player_positions: List[List]
-    ) -> List[PlayerPosition]:
-        player_positions_arr = []
-        for pp in player_positions:
-            player_positions_arr.append(PlayerPosition(pp))
-        return player_positions_arr
-
-    def to_dict(self) -> Dict:
-        moment_dict = {
-            "period": self.period,
-            "moment_id": self.moment_id,
-            "time_remaining": self.time_remaining_in_quarter,
-            "shot_clock": self.shot_clock,
-            "player_positions": [pp.to_dict() for pp in self.player_positions],
-        }
-        return moment_dict
-
-
-class Event:
-
-    def __init__(self, event: Dict):
-        self.event_id: str = event["eventId"]
-        self.visitor: str = event["visitor"]
-        self.home: str = event["home"]
-        self.moments: List[Moment] = self.get_moments(event["moments"])
-
-    def get_moments(self, moments: List[List]) -> List[Moment]:
-        moments_arr = []
-        for moment in moments:
-            moments_arr.append(Moment(moment))
-        return moments_arr
-
-
-class StatVUAnnotation:
-    """
-    Wrapper and helper functions for sportvu annotations for 15'-16' NBA games.
-    Data Source: https://github.com/linouk23/NBA-Player-Movements
-    """
-
-    def __init__(self, fp: str):
-        assert os.path.isfile(fp), f"Error: invalid path to statvu file: {fp}"
-        assert fp.endswith(".json"), f"Error: invalid ext, expect .json for fp: {fp}"
-        self.fp: str = fp
-        with open(fp, "r") as f:
-            self.data: Dict = ujson.load(f)
-
-        self.gameid: str = self.data["gameid"]
-        self.gamedata: str = self.data["gamedate"]
-        self.events: List[Event] = self.get_events(self.data["events"])
-        self.quarter_time_remaining_moment_map = (
-            self.get_quarter_time_remaining_moment_map()
-        )
-
-    def get_events(self, events: List[Dict]) -> List[Event]:
-        events_arr = []
-        for event in events:
-            events_arr.append(Event(event))
-        return events_arr
-
-    def get_quarter_time_remaining_moment_map(self) -> Dict[int, Dict[float, Moment]]:
-        """
-        {
-            quarter: {
-                time_remaining: Moment
-            }
-        }
-        """
-
-        quarter_time_remaining_map = {}
-        for event in self.events:
-            for moment in event.moments:
-                period = moment.period
-                time_remaining = moment.time_remaining_in_quarter
-                if period not in quarter_time_remaining_map:
-                    quarter_time_remaining_map[period] = {}
-                quarter_time_remaining_map[period][time_remaining] = moment
-        return quarter_time_remaining_map
-
-    def find_closest_moment(self, val: float, period: int) -> Moment:
-        """
-        Return the closest `Moment` to a time remaining `val` in a game `period`.
-        """
-
-        tr_moments_map_subset: Dict[Moment] = self.quarter_time_remaining_moment_map[
-            period
-        ]
-
-        keys: np.array = np.array(list(tr_moments_map_subset.keys())).astype(float)
-        closest_idx: int = np.argmin(abs(keys - val))
-        return tr_moments_map_subset[keys[closest_idx]]
 
 
 class BoundingBox:
@@ -147,7 +25,7 @@ class BoundingBox:
             data["frame_number"] if "frame_number" in data else frame_number
         )
         self.player_id: int = data["player_id"]
-        self.x: float = data["x"] if "x" in data else -0
+        self.x: float = data["x"] if "x" in data else 0
         self.y: float = data["y"] if "y" in data else 0
         self.width: float = data["width"] if "width" in data else 0
         self.height: float = data["height"] if "height" in data else 0
@@ -224,7 +102,9 @@ class ClipAnnotationWrapper:
     THREE_D_POSES_DIR = "filtered-clip-3d-poses-hmr-2.0"
     STATVU_LOGS_DIR = "statvu-game-logs"
 
-    def __init__(self, annotation_fp: str, verbose: bool = False, load_statvu: bool = False) -> None:
+    def __init__(
+        self, annotation_fp: str, verbose: bool = False, load_statvu: bool = False
+    ) -> None:
         """
         Given a path to a primary-annotation file, derive the paths to all other annotations for a given clip.
 
@@ -235,19 +115,17 @@ class ClipAnnotationWrapper:
         assert os.path.isfile(
             annotation_fp
         ), f"Error: {annotation_fp} is not a valid file"
+        assert annotation_fp.endswith(".json") or annotation_fp.endswith(
+            ".pkl"
+        ), f"Error: invalid ext, expect .json or .pkl for annotation_fp: {annotation_fp}"
+        self.annotations_fp: str = annotation_fp
 
-        self.annotation_ext: str = ""
+        # load annotation data dict
         self.annotation_data: Optional[Dict] = None
-        # subdir in level one of dataset
-        self.subdir: str = annotation_fp.split("/")[-4]
-
-        # load data
         if annotation_fp.endswith(".json"):
-            self.annotation_ext = ".json"
             with open(annotation_fp, "r") as f:
                 self.annotation_data = ujson.load(f)
         elif annotation_fp.endswith(".pkl"):
-            self.annotation_ext = ".pkl"
             with open(annotation_fp, "rb") as f:
                 self.annotation_data = pickle.load(f)
         else:
@@ -255,16 +133,13 @@ class ClipAnnotationWrapper:
                 f"Invalid annotation file path extension, expected: ['.json', '.pkl']"
             )
 
-        # the important object (:
+        # load `ClipAnnotation` data object
         self.clip_annotation = ClipAnnotation(self.annotation_data, verbose=verbose)
-        self.annotations_fp: str = annotation_fp
-        self.basename: str = (
-            os.path.basename(annotation_fp)
-            .replace(self.annotation_ext, "")
-            .replace("_annotation", "")
-        )
+
+        # set the path to the corresponding video clip
+        subdir: str = annotation_fp.split("/")[-4]
         self.video_fp: str = (
-            annotation_fp.replace(self.subdir, ClipAnnotationWrapper.CLIPS_DIR)
+            annotation_fp.replace(subdir, ClipAnnotationWrapper.CLIPS_DIR)
             .replace("_annotation", "")
             .replace(self.annotation_ext, ".mp4")
         )
@@ -276,22 +151,16 @@ class ClipAnnotationWrapper:
             )
             self.video_fp = None
 
-        self.statvu_aligned_fp: Optional[str] = os.path.join(
-            ClipAnnotationWrapper.DATASET_ROOT,
-            "statvu-aligned",
-            self.annotations_fp.split("/")[-3],
-            self.annotations_fp.split("/")[-1],
-        ).replace("_annotation", "")
-        try:
-            assert os.path.isfile(self.statvu_aligned_fp)
-        except:
-            logging.warning(
-                f"statvu-aligned time-remaining results: {self.statvu_aligned_fp}, do not exist. Setting this attribute to None."
-            )
-            self.statvu_aligned_fp = None
-
-        self.game_id: str = self.basename.split("_")[0]
+        # set a few attributes derived from fp
+        basename: str = (
+            os.path.basename(annotation_fp)
+            .replace(self.annotation_ext, "")
+            .replace("_annotation", "")
+        )
+        self.game_id: str = basename.split("_")[0]
         self.period: str = self.annotations_fp.split("/")[-2][-1]
+
+        # path to raw statvu game log
         self.statvu_game_log_fp: Optional[str] = None
         statvu_log_file_paths = glob(
             os.path.join(
@@ -301,19 +170,29 @@ class ClipAnnotationWrapper:
                 "*",
             )
         )
+        # find the corresponding statvu game log
         for fp in statvu_log_file_paths:
             game_id = fp.split("/")[-2].split(".")[-1]
             if game_id == self.game_id:
                 self.statvu_game_log_fp = fp
                 break
 
+        # optionally load `StatVUAnnotation`
         self.statvu_annotation: Optional[StatVUAnnotation] = None
         if load_statvu:
             self.statvu_annotation: StatVUAnnotation = StatVUAnnotation(
                 self.statvu_game_log_fp
             )
 
-        self.three_d_poses_fp = annotation_fp.replace(
+        # find path to statvu aligned moments dict
+        self.statvu_aligned_fp: Optional[str] = self.annotations_fp.replace(
+            "filtered-clip-annotations-40-bbx-ratios", "filtered-clip-statvu-moments"
+        )
+        if not os.path.isfile(self.statvu_aligned_fp):
+            self.statvu_aligned_fp = None
+
+        # find path to 3D-pose data
+        self.three_d_poses_fp: Optional[str] = annotation_fp.replace(
             self.subdir, ClipAnnotationWrapper.THREE_D_POSES_DIR
         ).replace(self.annotation_ext, "_bin.lz4")
         try:
@@ -323,10 +202,6 @@ class ClipAnnotationWrapper:
                 f"3D-pose file path: {self.three_d_poses_fp}, does not exist. Setting this attribute to None."
             )
             self.three_d_poses_fp = None
-
-        self.statvu_aligned_fp = self.annotations_fp.replace("filtered-clip-annotations-40-bbx-ratios", "filtered-clip-statvu-moments")
-        if not os.path.isfile(self.statvu_aligned_fp):
-            self.statvu_aligned_fp = None
 
     def get_3d_pose_data(self):
         with lz4.frame.open(self.three_d_poses_fp, "rb") as compressed_file:
@@ -393,10 +268,10 @@ class ClipAnnotationWrapper:
                     )
                 color = player_id_colors_map[player_id]
                 x, y, w, h = (
-                   int(bbx.x),
-                   int(bbx.y),
-                   int(bbx.width),
-                   int(bbx.height),
+                    int(bbx.x),
+                    int(bbx.y),
+                    int(bbx.width),
+                    int(bbx.height),
                 )
 
                 # print("x, y, w, h", x, y, w, h)
@@ -433,7 +308,9 @@ class ClipAnnotationWrapper:
 
         frames = self.get_frames()
 
-        img_fp = "/playpen-storage/levlevi/opr/fine-nba/src/entities/2d-court-diagram.png"
+        img_fp = (
+            "/playpen-storage/levlevi/opr/fine-nba/src/entities/2d-court-diagram.png"
+        )
         court_diagram = cv2.imread(img_fp)
         court_diagram = cv2.resize(court_diagram, (800, 500))
 
@@ -442,13 +319,15 @@ class ClipAnnotationWrapper:
         fourcc = cv2.VideoWriter_fourcc(*"XVID")
         writer = cv2.VideoWriter(dst_path, fourcc, fps, (width, height))
         xmax, ymax = 100, 50
-        
+
         for idx, frame in tqdm(
-            enumerate(frames), desc="Generating StatVU Player Position  Viz", total=len(frames)
+            enumerate(frames),
+            desc="Generating StatVU Player Position  Viz",
+            total=len(frames),
         ):
-            
+
             moment = statvu_aligned_data[idx]
-            player_positions = moment['player_positions']
+            player_positions = moment["player_positions"]
             canvas = np.zeros((720, 1280 * 2, 3), dtype="uint8")
             # set left half of screen to the color white
             canvas[:, :1280, :] = 255
@@ -458,9 +337,9 @@ class ClipAnnotationWrapper:
             canvas[100:600, 200:1000, :] = court_diagram
             # breakpoint()
             for pp in player_positions:
-                team_id = pp['team_id']
-                player_id = pp['player_id']
-                x, y = pp['x'], pp['y']
+                team_id = pp["team_id"]
+                player_id = pp["player_id"]
+                x, y = pp["x"], pp["y"]
                 if team_id not in team_id_colors_map:
                     # assign team a random color
                     if len(team_id_colors_map) == 0:
@@ -473,13 +352,23 @@ class ClipAnnotationWrapper:
                         # blue
                         team_id_colors_map[team_id] = (255, 0, 0)
                 # find the normalized x and y positions of the player on the left side of the screen
-                x_norm = x / xmax; new_x = int(x_norm * 800) + 200
-                y_norm = y / ymax; new_y = int(y_norm * 500) + 100
+                x_norm = x / xmax
+                new_x = int(x_norm * 800) + 200
+                y_norm = y / ymax
+                new_y = int(y_norm * 500) + 100
                 color = team_id_colors_map[team_id]
                 # draw a circle
                 cv2.circle(canvas, (new_x, new_y), 10, color, -1)
                 # place a player id label above each circle
-                cv2.putText(canvas, f"ID: {str(player_id)}", (new_x, new_y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, color, 4)
+                cv2.putText(
+                    canvas,
+                    f"ID: {str(player_id)}",
+                    (new_x, new_y - 10),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.9,
+                    color,
+                    4,
+                )
                 # draw the boundaries of the court as a red rectangle
                 cv2.rectangle(canvas, (200, 100), (1000, 600), (0, 0, 255), 5)
             writer.write(canvas)
