@@ -1,7 +1,7 @@
 import os
 from glob import glob
 
-DATASET_ROOT = "/mnt/mir/levlevi/nba-plus-statvu-dataset"
+DATASET_ROOT = "/playpen-storage/levlevi/nba-plus-statvu-dataset"
 FILTERED_CLIPS_ANN_DIR = "filtered-clip-annotations-with-video-info"
 FILTERED_CLIPS_ANN_EXT = ".pkl"
 
