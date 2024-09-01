@@ -1,8 +1,14 @@
 import os
+import socket
 from glob import glob
 
-DATASET_ROOT = "/playpen-storage/levlevi/nba-plus-statvu-dataset"
-FILTERED_CLIPS_ANN_DIR = "filtered-clip-annotations-with-video-info"
+NODE_NAME = socket.gethostname()
+# dynamically set root dir depeding on the current node
+DATASET_ROOT = "/mnt/mir/levlevi/nba-plus-statvu-dataset"
+if NODE_NAME == "mirage.ib":
+    DATASET_ROOT = "/playpen-storage/levlevi/nba-plus-statvu-dataset"
+
+FILTERED_CLIPS_ANN_DIR = "filtered-clip-annotations-40-bbx-ratios"
 FILTERED_CLIPS_ANN_EXT = ".pkl"
 
 
